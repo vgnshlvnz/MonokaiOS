@@ -1,10 +1,21 @@
-# Builds the live ISO with mkiso.sh on GitHub's runners.
-#  - Manual run (Actions tab → Build ISO → Run workflow) or push to main → ISO as a workflow artifact
-#  - Push a tag like v1.0.0 → GitHub Release with the ISO split into <2 GB parts
+# Builds the live ISO with mkiso.sh and publishes it on the repo's Releases tab.
+#  - Push a tag like v1.0.0        → release "v1.0.0"
+#  - Actions → Build ISO → Run     → release with the version you type, or vYYYY.MM.DD-<run> if empty
+#  - Push to main (mkiso.sh etc.)  → release vYYYY.MM.DD-<run>
+# The ISO is split into <2 GB parts because GitHub limits each release file to 2 GB.
 name: Build ISO
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, e.g. v1.2.0 (empty = vYYYY.MM.DD-<run number>)"
+        required: false
+        default: ""
+      prerelease:
+        description: "Mark as pre-release"
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths:
@@ -69,46 +80,40 @@ jobs:
         run: |
           sudo chown -R "$(id -u):$(id -g)" iso-build/cache/packages.* ./netlive-*.iso* 2>/dev/null || true
 
-      - name: Prepare files
+      - name: Prepare release files
         id: iso
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          iso="$(find . -maxdepth 1 -name 'netlive-*.iso' -printf '%T@ %f\n' | sort -nr | head -n1 | cut -d' ' -f2)"
-          [ -f "$iso" ] || { echo "::error::No ISO produced"; exit 1; }
-          name="${iso%.iso}"
-          if [ "${GITHUB_REF_TYPE}" = tag ]; then
-            name="netlive-${GITHUB_REF_NAME}-amd64"; mv "$iso" "$name.iso"; iso="$name.iso"
-          fi
+          src="$(find . -maxdepth 1 -name 'netlive-*.iso' -printf '%T@ %f\n' | sort -nr | head -n1 | cut -d' ' -f2)"
+          [ -f "$src" ] || { echo "::error::No ISO produced"; exit 1; }
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then tag="${GITHUB_REF_NAME}"
+          elif [ -n "${INPUT_VERSION}" ]; then tag="${INPUT_VERSION}"
+          else tag="v$(date -u +%Y.%m.%d)-${GITHUB_RUN_NUMBER}"; fi
+          iso="netlive-${tag}-amd64.iso"
+          mv "$src" "$iso"
           sha256sum "$iso" > "$iso.sha256"
-          echo "iso=$iso" >> "$GITHUB_OUTPUT"
-          ls -lh "$iso"
+          split -b 1900M -d -a 2 "$iso" "$iso.part"
+          { echo "tag=$tag"; echo "iso=$iso"; } >> "$GITHUB_OUTPUT"
+          ls -lh ./netlive-*
 
-      - name: Upload ISO as workflow artifact (non-tag runs)
-        if: github.ref_type != 'tag'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.iso.outputs.iso }}
-          path: |
-            ${{ steps.iso.outputs.iso }}
-            ${{ steps.iso.outputs.iso }}.sha256
-          retention-days: 7
-          compression-level: 0
-
-      - name: Split ISO for the release (assets are limited to 2 GB each)
-        if: github.ref_type == 'tag'
-        run: |
-          split -b 1900M -d -a 2 "${{ steps.iso.outputs.iso }}" "${{ steps.iso.outputs.iso }}.part"
-          ls -lh ./*.part*
-
-      - name: Publish release
-        if: github.ref_type == 'tag'
+      - name: Publish to Releases
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.iso.outputs.tag }}
+          name: Netlive ${{ steps.iso.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          prerelease: ${{ inputs.prerelease || false }}
+          make_latest: ${{ !(inputs.prerelease || false) }}
           files: |
             ${{ steps.iso.outputs.iso }}.part*
             ${{ steps.iso.outputs.iso }}.sha256
           body: |
-            Join the parts and verify:
-            ```
+            Built from ${{ github.sha }} on ${{ github.ref_name }}.
+
+            **Download all `.part` files and the `.sha256`, then join and verify:**
+            ```bash
             cat ${{ steps.iso.outputs.iso }}.part* > ${{ steps.iso.outputs.iso }}
             sha256sum -c ${{ steps.iso.outputs.iso }}.sha256
             ```
+            Windows (PowerShell): `cmd /c copy /b ${{ steps.iso.outputs.iso }}.part00+${{ steps.iso.outputs.iso }}.part01 ${{ steps.iso.outputs.iso }}`
