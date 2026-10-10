@@ -1,0 +1,7 @@
+# build output and work tree — never commit these
+iso-build/
+*.iso
+*.iso.sha256
+*.iso.part*
+*.vars.fd
+*.qcow2

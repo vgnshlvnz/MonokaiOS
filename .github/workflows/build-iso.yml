@@ -49,6 +49,13 @@ jobs:
           key: lb-pkgs-v2-${{ hashFiles('mkiso.sh') }}
           restore-keys: lb-pkgs-v2-
 
+      - name: Remove stale live-build state (must be created fresh, as root)
+        run: |
+          if git ls-files --error-unmatch iso-build >/dev/null 2>&1; then
+            echo "::warning::iso-build/ is committed to the repo — remove it (git rm -r --cached iso-build) and add it to .gitignore"
+          fi
+          sudo rm -rf iso-build/cache/bootstrap iso-build/chroot iso-build/binary iso-build/.build iso-build/config
+
       - name: Build ISO
         env:
           USER_PASS: ${{ secrets.USER_PASS }}
