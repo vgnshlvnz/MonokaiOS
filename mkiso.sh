@@ -34,33 +34,34 @@ PACKAGES=(
 APT_SOURCES=(
   # "docker|https://download.docker.com/linux/debian|trixie|stable|https://download.docker.com/linux/debian/gpg"
   # "tailscale|https://pkgs.tailscale.com/stable/debian|trixie|main|https://pkgs.tailscale.com/stable/debian/trixie.noarmor.gpg"
-  # "ai-workbench|https://workbench.download.nvidia.com/stable/linux/debian|default|proprietary|https://workbench.download.nvidia.com/stable/linux/gpgkey"
+     "ai-workbench|https://workbench.download.nvidia.com/stable/linux/debian|default|proprietary|https://workbench.download.nvidia.com/stable/linux/gpgkey"
 )
 # Packages to install from those repositories.
 REPO_PACKAGES=(
   # docker-ce docker-ce-cli containerd.io tailscale
   # <AI Workbench package: find its name with `apt-cache search workbench` after adding the repo>
+  nvidia-sync
 )
 
 # Desktop: none (console only) | xfce (classic, works everywhere incl. VMs)
 #          | sway (tiling Wayland, i3-style keys)
 #          | hyprland (tiling Wayland, from trixie-backports; needs a GPU — in QEMU use GL=1 ./testiso.sh)
-DESKTOP=hyprland
+DESKTOP=xfce
 DESKTOP_AUTOLOGIN=true           # boot straight into the desktop as USER_NAME
 
 # Disk installer with A/B system slots (built into this script).
 # On the live system run:  sudo netlive-ab install   (UEFI machines)
-AB_INSTALLER=true
+AB_INSTALLER=false
 
 # Standard Debian installers (in addition to, or instead of, netlive-ab):
 #   calamares        graphical installer on the live desktop ("Install Debian" / install-system)
 #   debian-installer "Install" + "Graphical install" entries in the boot menu
 #   both | none
-STD_INSTALLER=both
+STD_INSTALLER=debian-installer
 
 # .deb files to install directly: URL or a file next to this script.
 DEB_URLS=(
-  "https://github.com/vercel/hyper/releases/download/v3.4.1/hyper_3.4.1_amd64.deb"   # Hyper terminal (needs a DESKTOP)
+  #"https://github.com/vercel/hyper/releases/download/v3.4.1/hyper_3.4.1_amd64.deb"   # Hyper terminal (needs a DESKTOP)
 )
 
 # Pin an exact Zig release from ziglang.org (checksum-verified) for source builds
@@ -78,7 +79,7 @@ ZIG_VERSION="0.16.0"
 SOURCE_BUILDS=(
   # "htop|https://github.com/htop-dev/htop.git|3.4.1|"
   # "mytool|./src/mytool||make && make install PREFIX=/usr/local"
-  # "slosh|<slosh git URL>||"        # Zig project: add zig to BREW_PACKAGES
+  # "slosh|https://github.com/sl0p-foo/slosh.git||make vendor && make all && make install clean"        # Zig project: add zig to BREW_PACKAGES
 )
 # Packages needed only to compile the above (added when SOURCE_BUILDS is non-empty).
 SOURCE_BUILD_DEPS=(
@@ -88,14 +89,14 @@ SOURCE_BUILD_DEPS=(
 
 # npm packages, installed globally into /usr/local (pulls in Debian's nodejs + npm).
 NPM_PACKAGES=(
-  # @anthropic-ai/claude-code
+   @anthropic-ai/claude-code
 )
 
 # Homebrew formulae (installed into /home/linuxbrew/.linuxbrew at build time).
 # Leave empty to skip Homebrew entirely. Example: (k9s lazygit btop gping)
 # Linux only: macOS casks (e.g. 'claude' desktop app) are skipped with a warning.
 BREW_PACKAGES=(
-  k9s lazygit btop gping
+ codex lazygit btop gping
 )
 # ====================================================================
 
