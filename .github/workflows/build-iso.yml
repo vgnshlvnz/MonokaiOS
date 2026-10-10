@@ -37,12 +37,17 @@ jobs:
           sudo docker image prune -af >/dev/null
           df -h /
 
+      # Only the downloaded .deb files are cached. live-build's bootstrap snapshot
+      # (cache/bootstrap) is a root filesystem and breaks if restored by a non-root user.
       - name: Restore apt package cache
         uses: actions/cache@v4
         with:
-          path: iso-build/cache
-          key: lb-cache-${{ hashFiles('mkiso.sh') }}
-          restore-keys: lb-cache-
+          path: |
+            iso-build/cache/packages.bootstrap
+            iso-build/cache/packages.chroot
+            iso-build/cache/packages.binary
+          key: lb-pkgs-v2-${{ hashFiles('mkiso.sh') }}
+          restore-keys: lb-pkgs-v2-
 
       - name: Build ISO
         env:
@@ -52,9 +57,10 @@ jobs:
           chmod +x mkiso.sh
           sudo -E ./mkiso.sh
 
-      - name: Make build files readable for caching
+      - name: Make cached packages and the ISO readable
         if: always()
-        run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE" || true
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" iso-build/cache/packages.* ./netlive-*.iso* 2>/dev/null || true
 
       - name: Prepare files
         id: iso
