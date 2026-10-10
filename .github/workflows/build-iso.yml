@@ -1,0 +1,101 @@
+# Builds the live ISO with mkiso.sh on GitHub's runners.
+#  - Manual run (Actions tab → Build ISO → Run workflow) or push to main → ISO as a workflow artifact
+#  - Push a tag like v1.0.0 → GitHub Release with the ISO split into <2 GB parts
+name: Build ISO
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - mkiso.sh
+      - src/**
+      - keys/**
+      - .github/workflows/build-iso.yml
+    tags: ['v*']
+
+permissions:
+  contents: write          # needed to create releases
+
+concurrency:
+  group: build-iso-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Free disk space (build needs ~25 GB)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          sudo docker image prune -af >/dev/null
+          df -h /
+
+      - name: Restore apt package cache
+        uses: actions/cache@v4
+        with:
+          path: iso-build/cache
+          key: lb-cache-${{ hashFiles('mkiso.sh') }}
+          restore-keys: lb-cache-
+
+      - name: Build ISO
+        env:
+          USER_PASS: ${{ secrets.USER_PASS }}
+        run: |
+          [ -n "$USER_PASS" ] || { echo "::error::Set the USER_PASS repository secret"; exit 1; }
+          chmod +x mkiso.sh
+          sudo -E ./mkiso.sh
+
+      - name: Make build files readable for caching
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE" || true
+
+      - name: Prepare files
+        id: iso
+        run: |
+          iso="$(find . -maxdepth 1 -name 'netlive-*.iso' -printf '%T@ %f\n' | sort -nr | head -n1 | cut -d' ' -f2)"
+          [ -f "$iso" ] || { echo "::error::No ISO produced"; exit 1; }
+          name="${iso%.iso}"
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then
+            name="netlive-${GITHUB_REF_NAME}-amd64"; mv "$iso" "$name.iso"; iso="$name.iso"
+          fi
+          sha256sum "$iso" > "$iso.sha256"
+          echo "iso=$iso" >> "$GITHUB_OUTPUT"
+          ls -lh "$iso"
+
+      - name: Upload ISO as workflow artifact (non-tag runs)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.iso.outputs.iso }}
+          path: |
+            ${{ steps.iso.outputs.iso }}
+            ${{ steps.iso.outputs.iso }}.sha256
+          retention-days: 7
+          compression-level: 0
+
+      - name: Split ISO for the release (assets are limited to 2 GB each)
+        if: github.ref_type == 'tag'
+        run: |
+          split -b 1900M -d -a 2 "${{ steps.iso.outputs.iso }}" "${{ steps.iso.outputs.iso }}.part"
+          ls -lh ./*.part*
+
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ steps.iso.outputs.iso }}.part*
+            ${{ steps.iso.outputs.iso }}.sha256
+          body: |
+            Join the parts and verify:
+            ```
+            cat ${{ steps.iso.outputs.iso }}.part* > ${{ steps.iso.outputs.iso }}
+            sha256sum -c ${{ steps.iso.outputs.iso }}.sha256
+            ```
