@@ -113,6 +113,13 @@ command -v lb >/dev/null || { export DEBIAN_FRONTEND=noninteractive; apt-get upd
 
 mkdir -p "${WORK}" && cd "${WORK}"
 [[ -d config ]] && { lb clean; rm -rf config; }   # keeps the package cache
+# A saved base system copied by git or a CI cache loses root ownership and /tmp's
+# permissions, which breaks apt inside it. Detect that and rebuild it fresh.
+if [[ -d cache/bootstrap ]] && { [[ "$(stat -c %u cache/bootstrap/etc/passwd 2>/dev/null)" != 0 ]] ||
+                                 [[ "$(stat -c %a cache/bootstrap/tmp 2>/dev/null)" != 1777 ]]; }; then
+  echo "Discarding damaged bootstrap cache (wrong ownership/permissions); rebuilding it"
+  rm -rf cache/bootstrap .build
+fi
 
 lb config \
   --distribution "${DIST}" --architecture "${ARCH}" \
